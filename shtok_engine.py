@@ -282,26 +282,31 @@ def build_workbook(periods, out_path, company='ТОО «Штокпром»'):
             c = ws.cell(row=r, column=column_index_from_string(col), value=f); _sn(c); c.font = Font(name=_F, size=10, bold=True)
         r += 1; return r - 1
 
-    # ---- ДОХОД ОТ РЕАЛИЗАЦИИ (сверху, одним блоком) ----
+    # ---- ДОХОД ОТ РЕАЛИЗАЦИИ (сверху, строками по проектам) ----
     section('ДОХОД ОТ РЕАЛИЗАЦИИ')
-    inc_rows = [leaf(p, lambda R, p=p: R['proj_income'].get(p, 0.0)) for p in projects]
-    row_inc = total('ИТОГО ДОХОД ОТ РЕАЛИЗАЦИИ', rowrefs=inc_rows, fill='BDD7EE'); r += 1
+    inc_row = {}
+    for p in projects:
+        inc_row[p] = leaf(p, lambda R, p=p: R['proj_income'].get(p, 0.0))
+    row_inc = total('ИТОГО ДОХОД ОТ РЕАЛИЗАЦИИ', rowrefs=list(inc_row.values()), fill='BDD7EE'); r += 1
 
-    # ---- ПРЯМЫЕ РАСХОДЫ (подблоками по проектам) ----
-    section('ПРЯМЫЕ РАСХОДЫ (по проектам)')
-    dir_projs = [p for p in projects if _project_articles(periods, p)]
+    # ---- ПО КАЖДОМУ ПРОЕКТУ: прямые расходы (7010) -> операционная прибыль ----
     dsub_rows = []
-    for proj in dir_projs:
-        sc = ws.cell(row=r, column=2, value=f'  Проект «{proj}»')
-        sc.font = Font(name=_F, size=10, bold=True, italic=True, color='375623'); sc.border = _BORDER
-        for cc in range(2, 4 + ncol):
-            ws.cell(row=r, column=cc).fill = PatternFill('solid', fgColor='E2EFDA'); ws.cell(row=r, column=cc).border = _BORDER
-        r += 1
+    for proj in projects:
+        section(f'ПРОЕКТ «{proj}» — ПРЯМЫЕ РАСХОДЫ', color='548235')
         arts = _project_articles(periods, proj)
         art_rows = [leaf(a, lambda R, p=proj, a=a: R['proj_direct'].get(p, {}).get(a, 0.0), indent=2)
                     for a in arts]
-        r_sub = total(f'Итого «{proj}»', rowrefs=art_rows, fill='E2EFDA')
+        if art_rows:
+            r_sub = total(f'Итого прямые расходы «{proj}»', rowrefs=art_rows, fill='E2EFDA')
+        else:
+            r_sub = total(f'Итого прямые расходы «{proj}»', formula=lambda col: '=0', fill='E2EFDA')
         dsub_rows.append(r_sub)
+        total(f'ОПЕРАЦИОННАЯ ПРИБЫЛЬ «{proj}» (= доход − прямые)',
+              formula=lambda col, rv=inc_row[proj], ds=r_sub: f'={col}{rv}-{col}{ds}', fill='FFF2CC')
+        r += 1
+
+    # ---- СВОДНО ----
+    section('ИТОГО ПО ПРОЕКТАМ')
     row_dir = total('ИТОГО ПРЯМЫЕ РАСХОДЫ', rowrefs=dsub_rows, fill='BDD7EE')
     row_gross = total('ВАЛОВАЯ (ОПЕРАЦИОННАЯ) ПРИБЫЛЬ',
                       formula=lambda col: f'={col}{row_inc}-{col}{row_dir}', fill='FFF2CC'); r += 1
